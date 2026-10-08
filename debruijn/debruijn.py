@@ -313,7 +313,33 @@ def solve_entry_tips(graph: DiGraph, starting_nodes: List[str]) -> DiGraph:
     :param starting_nodes: (list) A list of starting nodes
     :return: (nx.DiGraph) A directed graph object
     """
-    pass
+    for node in list(graph.nodes()):
+        preds = list(graph.predecessors(node))
+        # Nœuds d'entrée qui peuvent atteindre ce nœud
+        entry_preds = [p for p in starting_nodes if nx.has_path(graph, p, node)]
+
+        # On vérifie s'il y a au moins 2 chemins distincts venant de nœuds d'entrée
+        paths = []
+        for entry_node in entry_preds:
+            for path in nx.all_simple_paths(graph, entry_node, node):
+                paths.append(path)
+
+        if len(paths) > 1:
+            lengths = [len(p) for p in paths]
+            weights = [path_average_weight(graph, p) for p in paths]
+            # On supprime le nœud d'entrée du chemin éliminé
+            graph = select_best_path(
+                graph,
+                paths,
+                lengths,
+                weights,
+                delete_entry_node=True,
+                delete_sink_node=False,
+            )
+            # Mise à jour récursive
+            return solve_entry_tips(graph, get_starting_nodes(graph))
+
+    return graph
 
 
 def solve_out_tips(graph: DiGraph, ending_nodes: List[str]) -> DiGraph:
@@ -323,7 +349,30 @@ def solve_out_tips(graph: DiGraph, ending_nodes: List[str]) -> DiGraph:
     :param ending_nodes: (list) A list of ending nodes
     :return: (nx.DiGraph) A directed graph object
     """
-    pass
+    for node in list(graph.nodes()):
+        succs = list(graph.successors(node))
+        if len(succs) > 1:
+            # Chemins depuis ce nœud vers les nœuds de sortie
+            paths = []
+            for end in ending_nodes:
+                if nx.has_path(graph, node, end):
+                    for path in nx.all_simple_paths(graph, node, end):
+                        paths.append(path)
+
+            if len(paths) > 1:
+                lengths = [len(p) for p in paths]
+                weights = [path_average_weight(graph, p) for p in paths]
+                graph = select_best_path(
+                    graph,
+                    paths,
+                    lengths,
+                    weights,
+                    delete_entry_node=False,
+                    delete_sink_node=True,
+                )
+                return solve_out_tips(graph, get_sink_nodes(graph))
+
+    return graph
 
 
 def get_starting_nodes(graph: DiGraph) -> List[str]:
@@ -391,6 +440,7 @@ def save_contigs(contigs_list: List[str], output_file: Path) -> None:
             handle.write(f">contig_{i} len={length}\n")
             handle.write(textwrap.fill(contig, width=80) + "\n")
 
+import networkx as nx
 
 def draw_graph(graph: DiGraph, graphimg_file: Path) -> None:  # pragma: no cover
     """Draw the graph
@@ -405,7 +455,7 @@ def draw_graph(graph: DiGraph, graphimg_file: Path) -> None:  # pragma: no cover
     # print(elarge)
     # Draw the graph with networkx
     # pos=nx.spring_layout(graph)
-    pos = nx.random_layout(graph)
+    pos = random_layout(graph)
     nx.draw_networkx_nodes(graph, pos, node_size=6)
     nx.draw_networkx_edges(graph, pos, edgelist=elarge, width=6)
     nx.draw_networkx_edges(
@@ -425,6 +475,26 @@ def main() -> None:  # pragma: no cover
     """
     # Get arguments
     args = get_arguments()
+
+    # 1. Lecture et construction du graphe
+    kmer_dict = build_kmer_dict(args.fastq, args.kmer)
+    graph = build_graph(kmer_dict)
+
+    # 2. Résolution des bulles
+    graph = simplify_bubbles(graph)
+
+    # 3. Résolution des pointes (tips)
+    starting_nodes = get_starting_nodes(graph)
+    graph = solve_entry_tips(graph, starting_nodes)
+
+    sink_nodes = get_sink_nodes(graph)
+    graph = solve_out_tips(graph, sink_nodes)
+
+    # 4. Extraction et sauvegarde des contigs
+    starting_nodes = get_starting_nodes(graph)
+    sink_nodes = get_sink_nodes(graph)
+    contigs = get_contigs(graph, starting_nodes, sink_nodes)
+    save_contigs(contigs, args.output)
 
     # Fonctions de dessin du graphe
     # A decommenter si vous souhaitez visualiser un petit
