@@ -473,8 +473,32 @@ def main() -> None:  # pragma: no cover
     """
     Main program function
     """
-    # Get arguments
-    args = get_arguments()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Assembleur de De Bruijn")
+    parser.add_argument(
+        "-i",
+        "--fastq",
+        dest="fastq",
+        required=True,
+        help="Fichier FASTQ d'entrée",
+    )
+    parser.add_argument(
+        "-k",
+        "--kmer",
+        dest="kmer",
+        type=int,
+        default=21,
+        help="Taille des k-mers",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        dest="output",
+        default="contigs.fna",
+        help="Fichier FASTA de sortie",
+    )
+    args = parser.parse_args()
 
     # 1. Lecture et construction du graphe
     kmer_dict = build_kmer_dict(args.fastq, args.kmer)
