@@ -313,21 +313,22 @@ def solve_entry_tips(graph: DiGraph, starting_nodes: List[str]) -> DiGraph:
     :param starting_nodes: (list) A list of starting nodes
     :return: (nx.DiGraph) A directed graph object
     """
-    for node in list(graph.nodes()):
-        preds = list(graph.predecessors(node))
-        # Nœuds d'entrée qui peuvent atteindre ce nœud
-        entry_preds = [p for p in starting_nodes if nx.has_path(graph, p, node)]
-
-        # On vérifie s'il y a au moins 2 chemins distincts venant de nœuds d'entrée
-        paths = []
-        for entry_node in entry_preds:
-            for path in nx.all_simple_paths(graph, entry_node, node):
-                paths.append(path)
-
+    for node in graph.nodes():
+        if len(list(graph.predecessors(node))) <= 1:
+            continue
+        # Une pointe d'entrée = chemin linéaire : ses noeuds internes n'ont
+        # qu'un seul prédécesseur (sinon on traverserait une autre jonction
+        # et on risquerait d'effacer le chemin principal).
+        paths = [
+            path
+            for start in starting_nodes
+            if start in graph and start != node and has_path(graph, start, node)
+            for path in all_simple_paths(graph, start, node)
+            if all(graph.in_degree(n) == 1 for n in path[1:-1])
+        ]
         if len(paths) > 1:
             lengths = [len(p) for p in paths]
             weights = [path_average_weight(graph, p) for p in paths]
-            # On supprime le nœud d'entrée du chemin éliminé
             graph = select_best_path(
                 graph,
                 paths,
@@ -336,11 +337,9 @@ def solve_entry_tips(graph: DiGraph, starting_nodes: List[str]) -> DiGraph:
                 delete_entry_node=True,
                 delete_sink_node=False,
             )
-            # Mise à jour récursive
+            # Le graphe a changé : on recommence avec les nouveaux noeuds d'entrée
             return solve_entry_tips(graph, get_starting_nodes(graph))
-
     return graph
-
 
 def solve_out_tips(graph: DiGraph, ending_nodes: List[str]) -> DiGraph:
     """Remove out tips
@@ -349,29 +348,28 @@ def solve_out_tips(graph: DiGraph, ending_nodes: List[str]) -> DiGraph:
     :param ending_nodes: (list) A list of ending nodes
     :return: (nx.DiGraph) A directed graph object
     """
-    for node in list(graph.nodes()):
-        succs = list(graph.successors(node))
-        if len(succs) > 1:
-            # Chemins depuis ce nœud vers les nœuds de sortie
-            paths = []
-            for end in ending_nodes:
-                if nx.has_path(graph, node, end):
-                    for path in nx.all_simple_paths(graph, node, end):
-                        paths.append(path)
-
-            if len(paths) > 1:
-                lengths = [len(p) for p in paths]
-                weights = [path_average_weight(graph, p) for p in paths]
-                graph = select_best_path(
-                    graph,
-                    paths,
-                    lengths,
-                    weights,
-                    delete_entry_node=False,
-                    delete_sink_node=True,
-                )
-                return solve_out_tips(graph, get_sink_nodes(graph))
-
+    for node in graph.nodes():
+        if len(list(graph.successors(node))) <= 1:
+            continue
+        paths = [
+            path
+            for end in ending_nodes
+            if end in graph and end != node and has_path(graph, node, end)
+            for path in all_simple_paths(graph, node, end)
+            if all(graph.out_degree(n) == 1 for n in path[1:-1])
+        ]
+        if len(paths) > 1:
+            lengths = [len(p) for p in paths]
+            weights = [path_average_weight(graph, p) for p in paths]
+            graph = select_best_path(
+                graph,
+                paths,
+                lengths,
+                weights,
+                delete_entry_node=False,
+                delete_sink_node=True,
+            )
+            return solve_out_tips(graph, get_sink_nodes(graph))
     return graph
 
 
@@ -473,57 +471,27 @@ def main() -> None:  # pragma: no cover
     """
     Main program function
     """
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Assembleur de De Bruijn")
-    parser.add_argument(
-        "-i",
-        "--fastq",
-        dest="fastq",
-        required=True,
-        help="Fichier FASTQ d'entrée",
-    )
-    parser.add_argument(
-        "-k",
-        "--kmer",
-        dest="kmer",
-        type=int,
-        default=21,
-        help="Taille des k-mers",
-    )
-    parser.add_argument(
-        "-o",
-        "--output",
-        dest="output",
-        default="contigs.fna",
-        help="Fichier FASTA de sortie",
-    )
-    args = parser.parse_args()
-
+    # Utilisation obligatoire des arguments du template (-i, -k, -o, -f)
+    args = get_arguments()
+ 
     # 1. Lecture et construction du graphe
-    kmer_dict = build_kmer_dict(args.fastq, args.kmer)
+    kmer_dict = build_kmer_dict(args.fastq_file, args.kmer_size)
     graph = build_graph(kmer_dict)
-
+ 
     # 2. Résolution des bulles
     graph = simplify_bubbles(graph)
-
+ 
     # 3. Résolution des pointes (tips)
-    starting_nodes = get_starting_nodes(graph)
-    graph = solve_entry_tips(graph, starting_nodes)
-
-    sink_nodes = get_sink_nodes(graph)
-    graph = solve_out_tips(graph, sink_nodes)
-
+    graph = solve_entry_tips(graph, get_starting_nodes(graph))
+    graph = solve_out_tips(graph, get_sink_nodes(graph))
+ 
     # 4. Extraction et sauvegarde des contigs
     starting_nodes = get_starting_nodes(graph)
     sink_nodes = get_sink_nodes(graph)
     contigs = get_contigs(graph, starting_nodes, sink_nodes)
-    save_contigs(contigs, args.output)
-
-    # Fonctions de dessin du graphe
-    # A decommenter si vous souhaitez visualiser un petit
-    # graphe
-    # Plot the graph
+    save_contigs(contigs, args.output_file)
+ 
+    # Dessin du graphe (uniquement pour un petit graphe)
     if args.graphimg_file:
         draw_graph(graph, args.graphimg_file)
 
