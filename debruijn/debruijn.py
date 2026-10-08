@@ -230,7 +230,6 @@ def select_best_path(
     
 
 
-
 def path_average_weight(graph: DiGraph, path: List[str]) -> float:
     """Compute the weight of a path
 
@@ -433,10 +432,10 @@ def save_contigs(contigs_list: List[str], output_file: Path) -> None:
     :param contig_list: (list) List of [contiguous sequence and their length]
     :param output_file: (Path) Path to the output file
     """
-    with open(output_file, "w", newline="\n") as handle:
+    with open(output_file, "w", newline="\n") as out_file:
         for i, (contig, length) in enumerate(contigs_list):
-            handle.write(f">contig_{i} len={length}\n")
-            handle.write(textwrap.fill(contig, width=80) + "\n")
+            out_file.write(f">contig_{i} len={length}\n")
+            out_file.write(textwrap.fill(contig, width=80) + "\n")
 
 import networkx as nx
 
